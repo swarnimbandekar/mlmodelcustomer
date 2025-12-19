@@ -3,8 +3,8 @@ import pickle
 import nltk
 from nltk.sentiment import SentimentIntensityAnalyzer
 
-# Download VADER lexicon (only first time)
-nltk.download('vader_lexicon')
+# Download VADER lexicon (first run only)
+nltk.download("vader_lexicon")
 
 app = Flask(__name__)
 
@@ -22,7 +22,7 @@ sia = SentimentIntensityAnalyzer()
 # ===============================
 
 def get_sentiment(text):
-    score = sia.polarity_scores(text)['compound']
+    score = sia.polarity_scores(text)["compound"]
     if score < -0.05:
         return "Negative"
     elif score > 0.05:
@@ -34,7 +34,8 @@ def get_sentiment(text):
 def assign_priority(sentiment, text):
     urgent_keywords = [
         "delay", "delayed", "lost", "damaged",
-        "urgent", "no response", "not delivered"
+        "urgent", "no response", "not delivered",
+        "missing", "stuck"
     ]
 
     if sentiment == "Negative" and any(k in text.lower() for k in urgent_keywords):
@@ -45,44 +46,29 @@ def assign_priority(sentiment, text):
         return "Low"
 
 
-def smart_category(text):
+def predict_category(text):
     """
-    Rule-based detection first (high confidence),
-    fallback to ML model if no rule matches
+    ML-first prediction (PRIMARY)
     """
-    t = text.lower()
-
-    if any(k in t for k in ["delivery", "delayed", "post", "parcel", "courier", "order"]):
-        return "Delivery"
-
-    if any(k in t for k in ["bill", "amount", "charged", "payment", "refund", "money"]):
-        return "Billing"
-
-    if any(k in t for k in ["support", "service", "rude", "staff", "helpdesk"]):
-        return "Service"
-
-    if any(k in t for k in ["internet", "network", "connection", "slow"]):
-        return "Technical"
-
-    # ML fallback
     vec = vectorizer.transform([text])
     return model.predict(vec)[0]
 
 
 def generate_response(category, priority):
-    if category == "Delivery":
-        return "We apologize for the delay. Your delivery complaint has been registered and marked as high priority."
+    responses = {
+        "Delivery Issues": "We apologize for the delay. Your delivery-related complaint has been registered and is being addressed.",
+        "Billing / Payment": "We are reviewing your billing or payment concern and will update you shortly.",
+        "Service / Staff": "We regret the inconvenience caused by our staff or service. The issue has been forwarded for action.",
+        "Technical": "Our technical team is reviewing the issue and will resolve it as soon as possible.",
+        "Other": "Thank you for contacting us. Your complaint has been registered for further review."
+    }
 
-    if category == "Billing":
-        return "We are reviewing your billing concern and will update you shortly."
+    response = responses.get(category, responses["Other"])
 
-    if category == "Service":
-        return "We regret the inconvenience. Our support team will contact you shortly."
+    if priority == "High":
+        response += " This complaint has been marked as high priority."
 
-    if category == "Technical":
-        return "Our technical team is looking into the issue and will resolve it as soon as possible."
-
-    return "Thank you for contacting us. We are reviewing your complaint."
+    return response
 
 
 # ===============================
@@ -98,7 +84,7 @@ def predict():
 
     text = data["complaint_text"]
 
-    category = smart_category(text)
+    category = predict_category(text)
     sentiment = get_sentiment(text)
     priority = assign_priority(sentiment, text)
     response = generate_response(category, priority)
@@ -113,6 +99,7 @@ def predict():
 
 # ===============================
 # Run server
-# ===============================
+# ==============================
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
